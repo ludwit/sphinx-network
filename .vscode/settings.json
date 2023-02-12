@@ -1,0 +1,16 @@
+{
+    "files.associations": {
+        "shell.h": "c",
+        "stdio.h": "c",
+        "string.h": "c",
+        "netif.h": "c",
+        "xtimer.h": "c",
+        "addr.h": "c",
+        "shpinx.h": "c",
+        "thread.h": "c",
+        "functional": "c",
+        "udp.h": "c",
+        "random": "c"
+    },
+    "C_Cpp.errorSquiggles": "disabled"
+}
