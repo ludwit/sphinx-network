@@ -77,7 +77,7 @@ void *sphinx_server(void *arg)
         print_hex_memory(rcv_buf, res);
 
         if (sphinx_process_message(rcv_buf, res, node_self) < 0) {
-            printf("server: could not process sphinx message");
+            puts("server: could not process sphinx message");
         }
 
         /* clear buffer for next iteration */

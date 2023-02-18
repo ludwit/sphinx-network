@@ -118,7 +118,7 @@ void calculate_header_padding(unsigned char* header_padding, unsigned char share
     unsigned char buff_header_padding[HEADER_PADDING_SIZE];
     
     /* random bytes from stream cipher */
-    unsigned char prg_stream[PRG_STREAM_SIZE];
+    unsigned char prg_stream[ROUTE_SIZE + ENC_ROUTING_SIZE];
 
     unsigned int padding_size = 0;
 
@@ -138,7 +138,7 @@ void calculate_header_padding(unsigned char* header_padding, unsigned char share
     return;
 }
 
-void calculate_routing_and_mac(unsigned char* enc_routing, unsigned char* mac, unsigned char* header_padding, unsigned char shared_secrets[][KEY_SIZE], struct network_node* path_nodes[], unsigned char* id)
+void encapsulate_routing_and_mac(unsigned char* enc_routing, unsigned char* mac, unsigned char* header_padding, unsigned char shared_secrets[][KEY_SIZE], struct network_node* path_nodes[], unsigned char* id)
 {
     /* stores intermediate results */
     unsigned char buff_enc_routing[ADDR_SIZE + MAC_SIZE + ENC_ROUTING_SIZE];
@@ -173,10 +173,26 @@ void calculate_routing_and_mac(unsigned char* enc_routing, unsigned char* mac, u
     return;
 }
 
-int create_sphinx_message(unsigned char *sphinx_message, ipv6_addr_t* dest_addr, char *data, size_t data_len)
+void encapsulate_payload(unsigned char* payload, unsigned char shared_secrets[][KEY_SIZE])
+{
+    unsigned char buff_payload[PAYLOAD_SIZE];
+    unsigned char prg_stream[ADDR_SIZE + MAC_SIZE + ENC_ROUTING_SIZE + PAYLOAD_SIZE];
+
+    for (int i=SPHINX_PATH_LEN - 1; i>=0; i--) {
+        memcpy(buff_payload, payload, sizeof(buff_payload));
+        crypto_stream(prg_stream, sizeof(prg_stream), nonce, shared_secrets[i]);
+        xor_backwards(payload, sizeof(buff_payload), buff_payload, sizeof(buff_payload), prg_stream, sizeof(prg_stream), sizeof(buff_payload));
+    }
+    return;
+}
+
+int create_sphinx_message(unsigned char* sphinx_message, ipv6_addr_t* dest_addr, char* data, size_t data_len)
 {
     /* network path for sphinx message (n0, n1, ... in sphinx spec) */
     struct network_node* path_nodes[SPHINX_PATH_LEN];
+
+    /* repeatedly encrypted payload */
+    unsigned char enc_payload[PAYLOAD_SIZE];
 
     /* secret ecc key of the sender (x in sphinx spec) */
     unsigned char secret_key[KEY_SIZE];
@@ -193,14 +209,14 @@ int create_sphinx_message(unsigned char *sphinx_message, ipv6_addr_t* dest_addr,
     /* padding in header to keep header size invarant at eacht hop */
     unsigned char header_padding[HEADER_PADDING_SIZE];
 
-    /* encrypted routing information in the header */
+    /* repeatedly encrypted routing information in the header */
     unsigned char enc_routing[ENC_ROUTING_SIZE];
 
     /* message authentication code for first hop */
     unsigned char mac[MAC_SIZE];
 
-    /* some id */
-    unsigned char id[ID_SIZE];
+    /* use mac of payload as id */
+    unsigned char id[MAC_SIZE];
 
     /* builds a random path to the recipient */
     if (pki_bulid_mix_path(path_nodes, ARRAY_SIZE(path_nodes), dest_addr) < 0) {
@@ -211,25 +227,27 @@ int create_sphinx_message(unsigned char *sphinx_message, ipv6_addr_t* dest_addr,
     /* precomputes the shared secrets with all nodes in path */
     calculate_shared_secrets(shared_secrets, path_nodes, secret_key, public_key);
 
+    /* initialise payload with plain text message and padding */
+    memcpy(enc_payload, data, data_len);
+    memset(&enc_payload[data_len], 0, PAYLOAD_SIZE - data_len);
+
+    /* calculates mac of plain text payload for athentication at destination and as message id */
+    crypto_onetimeauth(id, enc_payload, sizeof(enc_payload), shared_secrets[SPHINX_PATH_LEN - 1]);
+
+    /* repeatedly encrypt payload  */
+    encapsulate_payload(enc_payload, shared_secrets);
+
     /* calculates the final header padding */
     calculate_header_padding(header_padding, shared_secrets);
-    
-    /* do something with id */
-    memset(id, 0xff, sizeof(id));
 
     /* calculates the nested encrypted routing information */
-    calculate_routing_and_mac(enc_routing, mac, header_padding, shared_secrets, path_nodes, id);
-
-    // encrypt payload
-    unsigned char payload[SPHINX_PAYLOAD_SIZE];
-    memcpy(payload, data, data_len);
-    memset(&payload[data_len], 0, SPHINX_PAYLOAD_SIZE - data_len);
+    encapsulate_routing_and_mac(enc_routing, mac, header_padding, shared_secrets, path_nodes, id);
 
     /* compose sphinx message */
     memcpy(sphinx_message, public_key, KEY_SIZE);
     memcpy(&sphinx_message[KEY_SIZE], mac, MAC_SIZE);
     memcpy(&sphinx_message[KEY_SIZE + MAC_SIZE], enc_routing, ENC_ROUTING_SIZE);
-    memcpy(&sphinx_message[HEADER_SIZE], payload, SPHINX_PAYLOAD_SIZE);
+    memcpy(&sphinx_message[HEADER_SIZE], enc_payload, PAYLOAD_SIZE);
 
     /* chande destination to first hop */
     memcpy(dest_addr, &path_nodes[0]->addr, ADDR_SIZE);
@@ -239,12 +257,13 @@ int create_sphinx_message(unsigned char *sphinx_message, ipv6_addr_t* dest_addr,
 
 int sphinx_process_message(char *message, int message_size, struct network_node* node_self)
 {
-    /* sphinx message header fields */
+    /* sphinx message fields */
     unsigned char public_key[KEY_SIZE];
     unsigned char mac[MAC_SIZE];
     unsigned char enc_routing[ENC_ROUTING_SIZE + ADDR_SIZE + MAC_SIZE];
-
-    /* shared secrets */
+    unsigned char enc_payload[PAYLOAD_SIZE];
+    
+    /* shared secret */
     unsigned char raw_shared_secret[KEY_SIZE];
     unsigned char shared_secret[KEY_SIZE];
 
@@ -252,10 +271,12 @@ int sphinx_process_message(char *message, int message_size, struct network_node*
     ipv6_addr_t next_hop;
     unsigned char next_public_key[KEY_SIZE];
     unsigned char next_enc_routing[ENC_ROUTING_SIZE + ADDR_SIZE + MAC_SIZE];
-
-    unsigned char blinding_factor[KEY_SIZE];
-
+    unsigned char next_payload[PAYLOAD_SIZE];
     unsigned char fwd_message[SPHINX_MESSAGE_SIZE];
+
+    /* utils */
+    unsigned char prg_stream[ADDR_SIZE + MAC_SIZE + ENC_ROUTING_SIZE + PAYLOAD_SIZE];
+    unsigned char blinding_factor[KEY_SIZE];
 
     /* check for correct message size */
     if (message_size != SPHINX_MESSAGE_SIZE) {
@@ -267,6 +288,7 @@ int sphinx_process_message(char *message, int message_size, struct network_node*
     memcpy(public_key, message, KEY_SIZE);
     memcpy(mac, &message[KEY_SIZE], MAC_SIZE);
     memcpy(enc_routing, &message[KEY_SIZE + MAC_SIZE], ENC_ROUTING_SIZE);
+    memcpy(enc_payload, &message[KEY_SIZE + MAC_SIZE + ENC_ROUTING_SIZE], PAYLOAD_SIZE);
 
     /* calculate shared secret for decryption */
     crypto_scalarmult(raw_shared_secret, node_self->private_key, public_key);
@@ -284,13 +306,22 @@ int sphinx_process_message(char *message, int message_size, struct network_node*
     memset(&enc_routing[ENC_ROUTING_SIZE], 0, ADDR_SIZE + MAC_SIZE); 
     crypto_stream_xor(next_enc_routing, enc_routing, sizeof(enc_routing), nonce, shared_secret);
 
+    /* decrypt payload */
+    crypto_stream(prg_stream, sizeof(prg_stream), nonce, shared_secret);
+    xor_backwards(next_payload, sizeof(next_payload), enc_payload, sizeof(enc_payload), prg_stream, sizeof(prg_stream), sizeof(next_payload));
+    
     /* parse next hop address */
     memcpy(&next_hop, next_enc_routing, ADDR_SIZE);
 
-    /* check if message is for me */
+    /* check if message is for this node */
     if (ipv6_addr_equal(&node_self->addr, &next_hop)) {
-        puts("message received:");
-        printf("%s\n", &message[HEADER_SIZE]);
+
+        /* check for payload integrity */
+        if (crypto_onetimeauth_verify(&next_enc_routing[ADDR_SIZE], next_payload, sizeof(next_payload), shared_secret) < 0) {
+            puts("error: payload authentication failed");
+            return -1;
+        }
+        printf("message received:\n%s\n", next_payload);
         return 1;
     }
 
@@ -301,7 +332,7 @@ int sphinx_process_message(char *message, int message_size, struct network_node*
     /* compose forward message */
     memcpy(fwd_message, next_public_key, KEY_SIZE);
     memcpy(&fwd_message[KEY_SIZE], &next_enc_routing[ADDR_SIZE], ENC_ROUTING_SIZE + MAC_SIZE);
-    memcpy(&fwd_message[HEADER_SIZE], &message[HEADER_SIZE], message_size - HEADER_SIZE);
+    memcpy(&fwd_message[HEADER_SIZE], next_payload, PAYLOAD_SIZE);
 
     if (udp_send(&next_hop, fwd_message, SPHINX_MESSAGE_SIZE) < 0) {
         return -1;

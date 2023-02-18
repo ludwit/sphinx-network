@@ -48,8 +48,8 @@ int sphinx_cmd(int argc, char **argv)
         }
 
         /* check data length */
-        if (strlen(argv[3]) > SPHINX_PAYLOAD_SIZE) {
-            printf("error: data input too big\nSPHINX_PAYLOAD_SIZE = %d", SPHINX_PAYLOAD_SIZE);
+        if (strlen(argv[3]) > PAYLOAD_SIZE) {
+            printf("error: data input too big\nPAYLOAD_SIZE = %d", PAYLOAD_SIZE);
         }
         
         /* send sphinx message */
