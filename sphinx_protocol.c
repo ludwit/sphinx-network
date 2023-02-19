@@ -255,7 +255,7 @@ int create_sphinx_message(unsigned char* sphinx_message, ipv6_addr_t* dest_addr,
     return 1;
 }
 
-int sphinx_process_message(char *message, int message_size, struct network_node* node_self)
+int sphinx_process_message(char *message, int message_size, struct network_node* node_self, unsigned char tag_table[][TAG_SIZE], int* tag_count)
 {
     /* sphinx message fields */
     unsigned char public_key[KEY_SIZE];
@@ -294,7 +294,23 @@ int sphinx_process_message(char *message, int message_size, struct network_node*
     crypto_scalarmult(raw_shared_secret, node_self->private_key, public_key);
     hash_shared_secret(shared_secret, raw_shared_secret, sizeof(raw_shared_secret));
 
-    // check for duplicate
+    /* check for duplicate */
+    for (int i=0; i<*tag_count; i++) {
+        if (memcmp(shared_secret, &tag_table[i], TAG_SIZE) == 0) {
+            puts("error: duplicate detected");
+            return -1;
+        }
+    }
+
+    /* check if tag table is full */
+    if (*tag_count == 128) {
+        *tag_count = 0;
+        puts("server: rotated public key");
+    }
+
+    /* save message tag */
+    memcpy(&tag_table[*tag_count], shared_secret, TAG_SIZE);
+    (*tag_count)++;
 
     /* verify encrypted routing information */
     if (crypto_onetimeauth_verify(mac, enc_routing, ENC_ROUTING_SIZE, shared_secret) < 0) {

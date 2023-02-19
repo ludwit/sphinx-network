@@ -56,8 +56,10 @@ int sphinx_send(ipv6_addr_t* dest_addr, char *data, size_t data_len)
         return -1;
     }
 
+    /* showcase
     puts("sphinx: message sent");
     print_hex_memory(sphinx_message, sizeof(sphinx_message));
+    */
     
     return 1;
 }

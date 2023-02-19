@@ -42,6 +42,10 @@ void *sphinx_server(void *arg)
 
     struct network_node *node_self;
 
+    /* array to store seen message tags to prevent replay attacks */
+    unsigned char tag_table[TAG_TABL_LEN][TAG_SIZE];
+    int tag_count = 0;
+
     if (sock_udp_create(&sock, &local, NULL, 0) < 0) {
         puts("error: creating udp sock");
         return NULL;
@@ -72,11 +76,12 @@ void *sphinx_server(void *arg)
             continue;
         }
 
-        // showcase
+        /* showcase
         puts("server: message received");
         print_hex_memory(rcv_buf, res);
+        */
 
-        if (sphinx_process_message(rcv_buf, res, node_self) < 0) {
+        if (sphinx_process_message(rcv_buf, res, node_self, tag_table, &tag_count) < 0) {
             puts("server: could not process sphinx message");
         }
 
