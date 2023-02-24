@@ -35,10 +35,9 @@ void print_hex_memory (void *mem, int mem_size)
         if (! (i % 16) && i) {
             printf("\n");
         }
-        printf("0x%02x, ", p[i]);
+        printf("%02x ", p[i]);
     }
-    printf("0x%02x", p[i]);
-    printf("\n");
+    printf("%02x\n\n", p[i]);
 
     return;
 }

@@ -62,18 +62,18 @@ void xor_backwards(unsigned char *dest, size_t dest_size, unsigned char *a, size
     return;
 }
 
-void calculate_shared_secrets(unsigned char shared_secrets[][KEY_SIZE], struct network_node* path_nodes[], unsigned char *secret_key, unsigned char *public_key_root)
+void calculate_shared_secrets(unsigned char shared_secrets[][KEY_SIZE], struct network_node* path_nodes[], int path_len, unsigned char *secret_key, unsigned char *public_key_root)
 {
     /* public keys for computing the shared secrets at each hop (a0, a1, ... in sphinx spec) */
-    unsigned char public_keys[SPHINX_PATH_LEN][KEY_SIZE];
+    unsigned char public_keys[SPHINX_MAX_PATH][KEY_SIZE];
 
     /* blinding factors for each hop (b0, b1, ... in sphinx spec) */
-    unsigned char blinding_factors[SPHINX_PATH_LEN][KEY_SIZE];
+    unsigned char blinding_factors[SPHINX_MAX_PATH][KEY_SIZE];
 
     /* used to store intermediate results */
     unsigned char buff_shared_secret[KEY_SIZE];
 
-    /* prepare root for iteration */
+    /* prepare root for calculation of public keys, shared secrets and blinding factors */
 
     /* public key for first hop is the generic public key of the sender (a0 in sphinx spec) */
     memcpy(&public_keys[0], public_key_root, sizeof(public_keys[0]));
@@ -88,7 +88,7 @@ void calculate_shared_secrets(unsigned char shared_secrets[][KEY_SIZE], struct n
     hash_blinding_factor(blinding_factors[0], public_keys[0], shared_secrets[0], sizeof(blinding_factors[0]));
 
     /* iteratively calculates all remaining public keys, shared secrets and blinding factors */
-    for (int i=1; i<SPHINX_PATH_LEN; i++) {
+    for (int i=1; i<path_len; i++) {
 
         /* blinds the public key for node i-1 to get public key for node i */
         crypto_scalarmult(public_keys[i], blinding_factors[i-1], public_keys[i-1]);
@@ -112,49 +112,75 @@ void calculate_shared_secrets(unsigned char shared_secrets[][KEY_SIZE], struct n
     return;
 }
 
-void calculate_header_padding(unsigned char* header_padding, unsigned char shared_secrets[][KEY_SIZE])
+void calculate_nodes_padding(unsigned char* nodes_padding, unsigned char shared_secrets[][KEY_SIZE], int path_len)
 { 
     /* stores interim results */
-    unsigned char buff_header_padding[HEADER_PADDING_SIZE];
+    unsigned char buff_nodes_padding[MAX_NODES_PADDING];
     
     /* random bytes from stream cipher */
-    unsigned char prg_stream[ROUTE_SIZE + ENC_ROUTING_SIZE];
+    unsigned char prg_stream[ENC_ROUTING_SIZE + NODE_ROUT_SIZE];
 
     unsigned int padding_size = 0;
 
-    for (int i=0; i<SPHINX_PATH_LEN; i++) {
-        /* copy xored value to intermediate header padding */
-        memcpy(&buff_header_padding[sizeof(buff_header_padding) - padding_size - ROUTE_SIZE], &header_padding[sizeof(buff_header_padding) - padding_size], padding_size);
-        /* add padding to intermediate header */
-        memset(&buff_header_padding[sizeof(buff_header_padding) - ROUTE_SIZE], 0, ROUTE_SIZE);
+    #if DEBUG
+    memset(nodes_padding, 0, MAX_NODES_PADDING);
+    #endif /* DEBUG */
+
+    for (int i=0; i<path_len; i++) {
+        /* copy xored value to intermediate node padding */
+        memcpy(&buff_nodes_padding[sizeof(buff_nodes_padding) - padding_size - NODE_ROUT_SIZE], &nodes_padding[sizeof(buff_nodes_padding) - padding_size], padding_size);
+        /* add padding to intermediate node */
+        memset(&buff_nodes_padding[sizeof(buff_nodes_padding) - NODE_ROUT_SIZE], 0, NODE_ROUT_SIZE);
         /* increase padding variable */
-        padding_size += ROUTE_SIZE;
+        padding_size += NODE_ROUT_SIZE;
         /* calculate pseudo random byte stream with shared secret */
         crypto_stream(prg_stream, sizeof(prg_stream), nonce, shared_secrets[i]);
         /* xor intermediate padding and stream */
-        xor_backwards(header_padding, sizeof(buff_header_padding), buff_header_padding, sizeof(buff_header_padding), prg_stream, sizeof(prg_stream), padding_size);
+        xor_backwards(nodes_padding, sizeof(buff_nodes_padding), buff_nodes_padding, sizeof(buff_nodes_padding), prg_stream, sizeof(prg_stream), padding_size);
+
+        #if DEBUG
+        printf("Node Padding at Node %d\n", i);
+        print_hex_memory(nodes_padding, MAX_NODES_PADDING);
+        #endif /* DEBUG */
     }
 
     return;
 }
 
-void encapsulate_routing_and_mac(unsigned char* enc_routing, unsigned char* mac, unsigned char* header_padding, unsigned char shared_secrets[][KEY_SIZE], struct network_node* path_nodes[], unsigned char* id)
+void encapsulate_routing_and_mac(unsigned char* enc_routing, unsigned char* mac, unsigned char* node_padding, unsigned char shared_secrets[][KEY_SIZE], struct network_node* path_nodes[], int path_len, unsigned char* id)
 {
     /* stores intermediate results */
     unsigned char buff_enc_routing[ADDR_SIZE + MAC_SIZE + ENC_ROUTING_SIZE];
 
-    /* prepare root routing information for iteration */
-    memcpy(buff_enc_routing, &path_nodes[SPHINX_PATH_LEN-1]->addr, ADDR_SIZE);
-    memcpy(&buff_enc_routing[ADDR_SIZE], id, ID_SIZE);
-    memcpy(&buff_enc_routing[ADDR_SIZE + ID_SIZE], header_padding, HEADER_PADDING_SIZE);
+    /* padding to keep header size invariant regardless of actual path length */
+    int header_padding_size = (SPHINX_MAX_PATH - path_len) * NODE_ROUT_SIZE;
 
-    for (int i=SPHINX_PATH_LEN - 1; i>=0; i--) {
+    /* prepare root routing information for iteration */
+    memcpy(buff_enc_routing, &path_nodes[path_len-1]->addr, ADDR_SIZE);
+    memcpy(&buff_enc_routing[ADDR_SIZE], id, MAC_SIZE);
+    random_bytes(&buff_enc_routing[ADDR_SIZE + MAC_SIZE], header_padding_size);
+    memcpy(&buff_enc_routing[ADDR_SIZE + MAC_SIZE + header_padding_size], &node_padding[header_padding_size], MAX_NODES_PADDING - header_padding_size);
+
+    #if DEBUG
+    puts("MAC of Payload");
+    print_hex_memory(id, MAC_SIZE);
+    #endif /* DEBUG */
+
+    for (int i=path_len - 1; i>=0; i--) {
+
 
         /* encrypt routing information for node i (and cutt off padding) */
         crypto_stream_xor(enc_routing, buff_enc_routing, ENC_ROUTING_SIZE, nonce, shared_secrets[i]);
 
         /* calculate mac of encrypted routng information */
         crypto_onetimeauth(mac, enc_routing, ENC_ROUTING_SIZE, shared_secrets[i]);
+
+        #if DEBUG
+        printf("Encrypted Routing Inforamtion at Node %d\n", i);
+        print_hex_memory(enc_routing, ENC_ROUTING_SIZE);
+        printf("MAC of enrypted routing at Node %d\n", i);
+        print_hex_memory(mac, MAC_SIZE);
+        #endif /* DEBUG */
 
         /* end early if last iteration */
         if (i>0) {
@@ -173,15 +199,21 @@ void encapsulate_routing_and_mac(unsigned char* enc_routing, unsigned char* mac,
     return;
 }
 
-void encapsulate_payload(unsigned char* payload, unsigned char shared_secrets[][KEY_SIZE])
+void encapsulate_payload(unsigned char* payload, unsigned char shared_secrets[][KEY_SIZE], int path_len)
 {
     unsigned char buff_payload[PAYLOAD_SIZE];
     unsigned char prg_stream[ADDR_SIZE + MAC_SIZE + ENC_ROUTING_SIZE + PAYLOAD_SIZE];
 
-    for (int i=SPHINX_PATH_LEN - 1; i>=0; i--) {
+    for (int i=path_len - 1; i>=0; i--) {
         memcpy(buff_payload, payload, sizeof(buff_payload));
         crypto_stream(prg_stream, sizeof(prg_stream), nonce, shared_secrets[i]);
         xor_backwards(payload, sizeof(buff_payload), buff_payload, sizeof(buff_payload), prg_stream, sizeof(prg_stream), sizeof(buff_payload));
+        
+        #if DEBUG
+        printf("Encrypted Payload at Node %d\n", i);
+        print_hex_memory(payload, PAYLOAD_SIZE);
+        #endif /* DEBUG */
+
     }
     return;
 }
@@ -189,7 +221,10 @@ void encapsulate_payload(unsigned char* payload, unsigned char shared_secrets[][
 int create_sphinx_message(unsigned char* sphinx_message, ipv6_addr_t* dest_addr, char* data, size_t data_len)
 {
     /* network path for sphinx message (n0, n1, ... in sphinx spec) */
-    struct network_node* path_nodes[SPHINX_PATH_LEN];
+    struct network_node* path_nodes[SPHINX_MAX_PATH];
+
+    /* randomly chosen path length */
+    int path_len;
 
     /* repeatedly encrypted payload */
     unsigned char enc_payload[PAYLOAD_SIZE];
@@ -201,13 +236,13 @@ int create_sphinx_message(unsigned char* sphinx_message, ipv6_addr_t* dest_addr,
     unsigned char public_key[KEY_SIZE];
 
     /* shared secrets with nodes at each hop (s0, s1, ... in sphinx spec) */
-    unsigned char shared_secrets[SPHINX_PATH_LEN][KEY_SIZE];
+    unsigned char shared_secrets[SPHINX_MAX_PATH][KEY_SIZE];
 
     /* generates an ephermal asymmetric key pair for the sender */
     crypto_box_keypair(public_key, secret_key);
 
-    /* padding in header to keep header size invarant at eacht hop */
-    unsigned char header_padding[HEADER_PADDING_SIZE];
+    /* accumulated padding added to header at each hop to keep size invariant */
+    unsigned char nodes_padding[MAX_NODES_PADDING];
 
     /* repeatedly encrypted routing information in the header */
     unsigned char enc_routing[ENC_ROUTING_SIZE];
@@ -218,30 +253,40 @@ int create_sphinx_message(unsigned char* sphinx_message, ipv6_addr_t* dest_addr,
     /* use mac of payload as id */
     unsigned char id[MAC_SIZE];
 
+    /* choose random number for path length */
+    path_len = random_uint32_range(3, SPHINX_MAX_PATH);
+
     /* builds a random path to the recipient */
-    if (pki_bulid_mix_path(path_nodes, ARRAY_SIZE(path_nodes), dest_addr) < 0) {
+    if (pki_bulid_mix_path(path_nodes, path_len, dest_addr) < 0) {
         puts("could not build mix path");
         return -1;
     }
 
     /* precomputes the shared secrets with all nodes in path */
-    calculate_shared_secrets(shared_secrets, path_nodes, secret_key, public_key);
+    calculate_shared_secrets(shared_secrets, path_nodes, path_len, secret_key, public_key);
 
-    /* initialise payload with plain text message and padding */
+    #if DEBUG
+    for (int i=0;i<path_len;i++) {
+        printf("Shared Secret Key with Node %d\n", i);
+        print_hex_memory(shared_secrets[i], KEY_SIZE);
+    }
+    #endif /* DEBUG */
+
+    /* initialise payload with plain text message and message padding */
     memcpy(enc_payload, data, data_len);
     memset(&enc_payload[data_len], 0, PAYLOAD_SIZE - data_len);
 
-    /* calculates mac of plain text payload for athentication at destination and as message id */
-    crypto_onetimeauth(id, enc_payload, sizeof(enc_payload), shared_secrets[SPHINX_PATH_LEN - 1]);
+    /* calculates mac of plain text payload for authentication at destination and as message id */
+    crypto_onetimeauth(id, enc_payload, sizeof(enc_payload), shared_secrets[path_len - 1]);
 
     /* repeatedly encrypt payload  */
-    encapsulate_payload(enc_payload, shared_secrets);
+    encapsulate_payload(enc_payload, shared_secrets, path_len);
 
-    /* calculates the final header padding */
-    calculate_header_padding(header_padding, shared_secrets);
+    /* precalculates the accumulated padding added at each hop */
+    calculate_nodes_padding(nodes_padding, shared_secrets, path_len);
 
     /* calculates the nested encrypted routing information */
-    encapsulate_routing_and_mac(enc_routing, mac, header_padding, shared_secrets, path_nodes, id);
+    encapsulate_routing_and_mac(enc_routing, mac, nodes_padding, shared_secrets, path_nodes, path_len, id);
 
     /* compose sphinx message */
     memcpy(sphinx_message, public_key, KEY_SIZE);
@@ -249,7 +294,7 @@ int create_sphinx_message(unsigned char* sphinx_message, ipv6_addr_t* dest_addr,
     memcpy(&sphinx_message[KEY_SIZE + MAC_SIZE], enc_routing, ENC_ROUTING_SIZE);
     memcpy(&sphinx_message[HEADER_SIZE], enc_payload, PAYLOAD_SIZE);
 
-    /* chande destination to first hop */
+    /* change destination to first hop */
     memcpy(dest_addr, &path_nodes[0]->addr, ADDR_SIZE);
 
     return 1;
@@ -260,7 +305,7 @@ int sphinx_process_message(char *message, int message_size, struct network_node*
     /* sphinx message fields */
     unsigned char public_key[KEY_SIZE];
     unsigned char mac[MAC_SIZE];
-    unsigned char enc_routing[ENC_ROUTING_SIZE + ADDR_SIZE + MAC_SIZE];
+    unsigned char enc_routing[ENC_ROUTING_SIZE + NODE_PADDING];
     unsigned char enc_payload[PAYLOAD_SIZE];
     
     /* shared secret */
@@ -294,6 +339,19 @@ int sphinx_process_message(char *message, int message_size, struct network_node*
     crypto_scalarmult(raw_shared_secret, node_self->private_key, public_key);
     hash_shared_secret(shared_secret, raw_shared_secret, sizeof(raw_shared_secret));
 
+    #if DEBUG
+    puts("Public Key");
+    print_hex_memory(public_key, KEY_SIZE);
+    puts("MAC");
+    print_hex_memory(mac, MAC_SIZE);
+    puts("Encrypted Routing Information");
+    print_hex_memory(enc_routing, ENC_ROUTING_SIZE);
+    puts("Encrypted Payload");
+    print_hex_memory(enc_payload, PAYLOAD_SIZE);
+    puts("Shared Secret Key");
+    print_hex_memory(shared_secret, KEY_SIZE);
+    #endif /* DEBUG */
+
     /* check for duplicate */
     for (int i=0; i<*tag_count; i++) {
         if (memcmp(shared_secret, &tag_table[i], TAG_SIZE) == 0) {
@@ -319,7 +377,7 @@ int sphinx_process_message(char *message, int message_size, struct network_node*
     }
 
     /* decrypt routing information */
-    memset(&enc_routing[ENC_ROUTING_SIZE], 0, ADDR_SIZE + MAC_SIZE); 
+    memset(&enc_routing[ENC_ROUTING_SIZE], 0, NODE_PADDING); 
     crypto_stream_xor(next_enc_routing, enc_routing, sizeof(enc_routing), nonce, shared_secret);
 
     /* decrypt payload */
