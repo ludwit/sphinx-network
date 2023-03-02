@@ -26,7 +26,7 @@
 
 #include "shpinx.h"
 
-void print_hex_memory (void *mem, int mem_size)
+void print_hex_memory(void *mem, int mem_size)
 {
     int i;
     unsigned char *p = (unsigned char *)mem;
@@ -35,9 +35,9 @@ void print_hex_memory (void *mem, int mem_size)
         if (! (i % 16) && i) {
             printf("\n");
         }
-        printf("%02x ", p[i]);
+        printf("0x%02x, ", p[i]);
     }
-    printf("%02x\n\n", p[i]);
+    printf("0x%02x\n\n", p[i]);
 
     return;
 }
@@ -70,30 +70,21 @@ struct network_node* pki_get_node(ipv6_addr_t *node_addr)
     return NULL;
 }
 
-int pki_bulid_mix_path(struct network_node* path_nodes[], size_t path_size, ipv6_addr_t *dest_addr)
+int pki_bulid_mix_path(struct network_node* path_nodes[], int path_len, ipv6_addr_t *start_addr, ipv6_addr_t *dest_addr)
 {
-    ipv6_addr_t local_addr;
     uint32_t random;
-    char chosen[SPHINX_NET_SIZE];
-    unsigned int i;
-
-    memset(chosen, 0, sizeof(chosen));
-    
-    /* get address of this node */
-    if (get_local_ipv6_addr(&local_addr) < 0) {
-        return -1;
-    }
+    char chosen[SPHINX_NET_SIZE] = {0};
 
     /* select random mix nodes */
-    i = 0;
-    while (i < (path_size-1)) {
+    int i = 0;
+    while (i < (path_len-1)) {
         random = random_uint32_range(0, SPHINX_NET_SIZE);
 
         if (chosen[random]) {
             continue;
         }
 
-        if (ipv6_addr_equal(&network_pki[random].addr, &local_addr) || ipv6_addr_equal(&network_pki[random].addr, dest_addr)) {
+        if (ipv6_addr_equal(&network_pki[random].addr, start_addr) || ipv6_addr_equal(&network_pki[random].addr, dest_addr)) {
             chosen[random] = '1';
             continue;
         }

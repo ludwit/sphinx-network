@@ -39,6 +39,9 @@ int main(void)
     }
     puts("");
 
+    // better
+    sphinx_server_start();
+
     /* start shell */
     char line_buf[SHELL_DEFAULT_BUFSIZE];
     shell_run(NULL, line_buf, SHELL_DEFAULT_BUFSIZE);

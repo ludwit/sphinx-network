@@ -43,7 +43,7 @@ int udp_send(ipv6_addr_t* dest_addr, unsigned char *message, size_t message_size
 
 int sphinx_send(ipv6_addr_t* dest_addr, char *data, size_t data_len)
 {
-    unsigned char sphinx_message[SPHINX_MESSAGE_SIZE];
+    unsigned char sphinx_message[SPHINX_MESSAGE_SIZE] = {0};
 
     /* create sphinx message */
     if (create_sphinx_message(sphinx_message, dest_addr, data, data_len) < 0) {
@@ -55,11 +55,6 @@ int sphinx_send(ipv6_addr_t* dest_addr, char *data, size_t data_len)
     if (udp_send(dest_addr, sphinx_message, SPHINX_MESSAGE_SIZE) < 0) {
         return -1;
     }
-
-    /* showcase
-    puts("sphinx: message sent");
-    print_hex_memory(sphinx_message, sizeof(sphinx_message));
-    */
     
     return 1;
 }

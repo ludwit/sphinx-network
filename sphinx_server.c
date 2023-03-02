@@ -76,11 +76,6 @@ void *sphinx_server(void *arg)
             continue;
         }
 
-        
-        puts("server: message received");
-        print_hex_memory(rcv_buf, res);
-        
-
         if (sphinx_process_message(rcv_buf, res, node_self, tag_table, &tag_count) < 0) {
             puts("server: could not process sphinx message");
         }
