@@ -100,7 +100,9 @@ int sphinx_process_message(unsigned char *message, struct network_node* node_sel
     hash_shared_secret(shared_secret, raw_shared_secret);
 
     #if DEBUG
-    puts("shared secret");
+    puts("DEBUG: message received");
+    print_hex_memory(message, SPHINX_MESSAGE_SIZE);
+    puts("DEBUG: shared secret");
     print_hex_memory(shared_secret, KEY_SIZE);
     #endif /* DEBUG */
 
@@ -126,8 +128,6 @@ int sphinx_process_message(unsigned char *message, struct network_node* node_sel
     /* verify encrypted routing information */
     if (crypto_onetimeauth_verify(&message[KEY_SIZE], &message[KEY_SIZE + MAC_SIZE], ENC_ROUTING_SIZE, shared_secret) < 0) {
         puts("error: message authentication failed");
-        puts("message");
-        print_hex_memory(&message, SPHINX_MESSAGE_SIZE);
         return -1;
     }
 
