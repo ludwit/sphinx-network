@@ -18,13 +18,6 @@
  * @}
  */
 
-#include <stdio.h>
-#include <string.h>
-
-#include "shell.h"
-#include "net/ipv6/addr.h"
-#include "tweetnacl.h"
-
 #include "shpinx.h"
 
 int main(void)

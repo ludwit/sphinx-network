@@ -18,35 +18,12 @@
  * @}
  */
 
-#include <stdio.h>
-#include <string.h>
-
-#include "net/sock/udp.h"
-
 #include "shpinx.h"
-
-int udp_send(ipv6_addr_t* dest_addr, unsigned char *message, size_t message_size)
-{
-    /* set up remote endpoint */
-    sock_udp_ep_t remote = { .family = AF_INET6 };
-    remote.port = SPHINX_PORT;
-    memcpy(remote.addr.ipv6, dest_addr, sizeof(ipv6_addr_t));
-
-    /* send message */
-    if (sock_udp_send(NULL, message, message_size, &remote) < 0) {
-        puts("could not send message with udp");
-        return -1;
-    }
-
-    return 1;
-}
 
 int sphinx_send(ipv6_addr_t* dest_addr, char *data, size_t data_len)
 {
-    unsigned char sphinx_message[SPHINX_MESSAGE_SIZE] = {0};
-
     /* create sphinx message */
-    if (create_sphinx_message(sphinx_message, dest_addr, data, data_len) < 0) {
+    if (sphinx_create_message(sphinx_message, dest_addr, data, data_len) < 0) {
         puts("could not create sphinx message");
         return -1;
     }
