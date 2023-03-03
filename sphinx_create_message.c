@@ -146,10 +146,10 @@ void encapsulate_routing_and_mac(unsigned char* routing_and_mac, unsigned char s
         crypto_onetimeauth(routing_and_mac, &routing_and_mac[MAC_SIZE], ENC_ROUTING_SIZE, shared_secrets[i]);
 
         #if DEBUG
-        printf("DEBUG: encrypted Routing Inforamtion at Node %d\n", i);
-        print_hex_memory(&routing_and_mac[MAC_SIZE], ENC_ROUTING_SIZE);
         printf("DEBUG: MAC of enrypted routing at Node %d\n", i);
         print_hex_memory(routing_and_mac, MAC_SIZE);
+        printf("DEBUG: encrypted Routing Inforamtion at Node %d\n", i);
+        print_hex_memory(&routing_and_mac[MAC_SIZE], ENC_ROUTING_SIZE);
         #endif /* DEBUG */
 
         /* end early if last iteration */
@@ -179,10 +179,16 @@ void encrypt_surb_and_payload(unsigned char* surb_and_payload, unsigned char sha
 
 void build_sphinx_surb(unsigned char *sphinx_surb, unsigned char shared_secrets[][KEY_SIZE], unsigned char *id, struct network_node* path_nodes[], int path_len_reply)
 {
+    #if DEBUG
+    puts("DEBUG: SURB CREATION\n");
+    #endif /* DEBUG */
+
     /* save address of first hop to surb */
     memcpy(sphinx_surb, &path_nodes[0]->addr, ADDR_SIZE);
+
     /* precalculates the accumulated padding added at each hop */
-    calculate_nodes_padding(&sphinx_surb[ADDR_SIZE], shared_secrets, path_len_reply);
+    calculate_nodes_padding(&sphinx_surb[ADDR_SIZE + MAC_SIZE], shared_secrets, path_len_reply);
+
     /* calculates the nested encrypted routing information */
     encapsulate_routing_and_mac(&sphinx_surb[ADDR_SIZE], shared_secrets, path_nodes, path_len_reply, id);
 
@@ -191,6 +197,10 @@ void build_sphinx_surb(unsigned char *sphinx_surb, unsigned char shared_secrets[
 
 void build_sphinx_header(unsigned char* sphinx_header, unsigned char shared_secrets[][KEY_SIZE], unsigned char* id, struct network_node* path_nodes[], int path_len_dest)
 {
+    #if DEBUG
+    puts("DEBUG: HEADER CREATION\n");
+    #endif /* DEBUG */
+
     /* calculates mac of plain text payload for authentication at destination and as message id */
     crypto_onetimeauth(id, &sphinx_header[HEADER_SIZE + SURB_SIZE], PAYLOAD_SIZE, shared_secrets[path_len_dest - 1]);
     /* precalculates the accumulated padding added at each hop */

@@ -35,7 +35,7 @@
 #include "tweetnacl.h"
 
 /* dev tools */
-#define DEBUG 1
+#define DEBUG 0
 
 /* sphinx network metrics */
 #define SPHINX_PORT 45678
