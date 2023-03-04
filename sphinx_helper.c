@@ -51,12 +51,12 @@ int get_local_ipv6_addr(ipv6_addr_t *result)
     return 1;
 }
 
-struct network_node* get_node(ipv6_addr_t *node_addr)
+network_node* get_node(ipv6_addr_t *node_addr)
 {   
     unsigned int i;
     for (i=0; i < SPHINX_NET_SIZE; i++) {
         if (ipv6_addr_equal(&network_pki[i].addr, node_addr)) {
-            return (struct network_node*) &network_pki[i];
+            return (network_node*) &network_pki[i];
         }
     }
 
@@ -73,7 +73,7 @@ int udp_send(ipv6_addr_t* dest_addr, unsigned char *message, size_t message_size
 
     /* send message */
     if (sock_udp_send(NULL, message, message_size, &remote) < 0) {
-        puts("could not send message with udp");
+        puts("error: could not send message with udp");
         return -1;
     }
 

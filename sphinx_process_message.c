@@ -36,7 +36,7 @@ int receive_message(unsigned char *message, unsigned char *public_key, unsigned 
     unsigned char blinding_factor[KEY_SIZE];
 
     /* print message */
-    printf("sphinx: message received:\n%s\n", &message[HEADER_SIZE + SURB_SIZE]);
+    printf("sphinx: message received\n%s\n", &message[HEADER_SIZE + SURB_SIZE]);
 
     /* parse address of first reply hop */
     memcpy(&first_reply_hop, &message[HEADER_SIZE], ADDR_SIZE);
@@ -55,7 +55,6 @@ int receive_message(unsigned char *message, unsigned char *public_key, unsigned 
         return -1;
     }
 
-    puts("sphinx: reply sent");
     return 1;
 }
 
@@ -81,7 +80,7 @@ int forward_message(unsigned char *message, unsigned char *public_key, unsigned 
 }
 
 
-int sphinx_process_message(unsigned char *message, struct network_node* node_self, unsigned char tag_table[][TAG_SIZE], int* tag_count)
+int sphinx_process_message(unsigned char *message, network_node* node_self, unsigned char tag_table[][TAG_SIZE], int* tag_count)
 {
     /* shared secret */
     unsigned char raw_shared_secret[KEY_SIZE];

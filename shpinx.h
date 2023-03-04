@@ -66,6 +66,12 @@
 
 /* global variables */
 
+/* idicator if sphinx thread is running */
+extern kernel_pid_t sphinx_pid;
+
+/* event queue for sphinx thread */
+extern event_queue_t sphinx_queue;
+
 /* stores random bytes from stream cipher */
 extern unsigned char prg_stream[PRG_STREAM_SIZE];
 
@@ -73,22 +79,32 @@ extern unsigned char prg_stream[PRG_STREAM_SIZE];
 extern unsigned char sphinx_message[SPHINX_MESSAGE_SIZE];
 
 /* types */
-struct network_node {
+
+typedef struct {
+    clist_node_t list_node;     
+    event_handler_t handler; 
+    ipv6_addr_t* dest_addr;
+    char *data;
+    size_t data_len;
+} event_send;
+
+typedef struct {
     ipv6_addr_t addr;
     unsigned char public_key[32];
     unsigned char private_key[32];
-};
+} network_node;
 
 /* global funcitons */
+int sphinx_start(void);
+void handle_send(event_t *event);
+void handle_stop(event_t *event);
 int sphinx_create_message(unsigned char *message, ipv6_addr_t* dest_addr, char *data, size_t data_len);
-int sphinx_process_message(unsigned char *message, struct network_node* node_self, unsigned char tag_table[][TAG_SIZE], int* tag_count);
-int sphinx_server_start(void);
-int sphinx_send(ipv6_addr_t* dest_addr, char *data, size_t data_len);
+int sphinx_process_message(unsigned char *message, network_node* node_self, unsigned char tag_table[][TAG_SIZE], int* tag_count);
 
 /* helper functions */
 void print_hex_memory (void *mem, int mem_size);
 int get_local_ipv6_addr(ipv6_addr_t *result);
-struct network_node* get_node(ipv6_addr_t *node_addr);
+network_node* get_node(ipv6_addr_t *node_addr);
 int udp_send(ipv6_addr_t* dest_addr, unsigned char *message, size_t message_size);
 void hash_blinding_factor(unsigned char *dest, unsigned char *public_key, unsigned char *sharde_secret);
 void hash_shared_secret(unsigned char *dest, unsigned char *sharde_secret);
@@ -99,7 +115,7 @@ void xor_backwards_inplace(unsigned char *dest, size_t dest_size, unsigned char 
 /* static values */
 static const unsigned char nonce[] = { 0xff, 0xcb, 0x7c, 0x4f, 0xcc, 0x0e, 0xf9, 0x29, 0xde, 0xaa, 0x42, 0xd2, 0xa2, 0x3e, 0x5f, 0xa3, 0xbd, 0x6d, 0xd8, 0x76, 0xf8, 0x7c, 0x84, 0x3f };
 
-static const struct network_node network_pki[] =
+static const network_node network_pki[] =
 {
     /* 0 */
     {

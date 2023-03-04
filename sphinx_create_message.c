@@ -2,7 +2,7 @@
 
 // überall unsigned weg machen
 
-int bulid_mix_path(struct network_node* path_nodes[], int path_len, ipv6_addr_t *start_addr, ipv6_addr_t *dest_addr)
+int bulid_mix_path(network_node* path_nodes[], int path_len, ipv6_addr_t *start_addr, ipv6_addr_t *dest_addr)
 {
     uint32_t random;
     char chosen[SPHINX_NET_SIZE] = {0};
@@ -21,7 +21,7 @@ int bulid_mix_path(struct network_node* path_nodes[], int path_len, ipv6_addr_t 
             continue;
         }
 
-        path_nodes[i] = (struct network_node*) &network_pki[random];
+        path_nodes[i] = (network_node*) &network_pki[random];
         chosen[random] = '1';
         i++;
     }
@@ -35,7 +35,7 @@ int bulid_mix_path(struct network_node* path_nodes[], int path_len, ipv6_addr_t 
     return 1;
 }
 
-void calculate_shared_secrets(unsigned char* sphinx_message, unsigned char shared_secrets[][KEY_SIZE], struct network_node* path_nodes[], int path_len)
+void calculate_shared_secrets(unsigned char* sphinx_message, unsigned char shared_secrets[][KEY_SIZE], network_node* path_nodes[], int path_len)
 {
     /* secret ecc key of the sender (x in sphinx spec) */
     unsigned char secret_key[KEY_SIZE];
@@ -119,7 +119,7 @@ void calculate_nodes_padding(unsigned char* nodes_padding, unsigned char shared_
     return;
 }
 
-void encapsulate_routing_and_mac(unsigned char* routing_and_mac, unsigned char shared_secrets[][KEY_SIZE], struct network_node* path_nodes[], int path_len, unsigned char* id)
+void encapsulate_routing_and_mac(unsigned char* routing_and_mac, unsigned char shared_secrets[][KEY_SIZE], network_node* path_nodes[], int path_len, unsigned char* id)
 {
     /* padding to keep header size invariant regardless of actual path length */
     int header_padding_size = (SPHINX_MAX_PATH - path_len) * NODE_ROUT_SIZE;
@@ -177,7 +177,7 @@ void encrypt_surb_and_payload(unsigned char* surb_and_payload, unsigned char sha
     return;
 }
 
-void build_sphinx_surb(unsigned char *sphinx_surb, unsigned char shared_secrets[][KEY_SIZE], unsigned char *id, struct network_node* path_nodes[], int path_len_reply)
+void build_sphinx_surb(unsigned char *sphinx_surb, unsigned char shared_secrets[][KEY_SIZE], unsigned char *id, network_node* path_nodes[], int path_len_reply)
 {
     #if DEBUG
     puts("DEBUG: SURB CREATION\n");
@@ -195,7 +195,7 @@ void build_sphinx_surb(unsigned char *sphinx_surb, unsigned char shared_secrets[
     return;
 }
 
-void build_sphinx_header(unsigned char* sphinx_header, unsigned char shared_secrets[][KEY_SIZE], unsigned char* id, struct network_node* path_nodes[], int path_len_dest)
+void build_sphinx_header(unsigned char* sphinx_header, unsigned char shared_secrets[][KEY_SIZE], unsigned char* id, network_node* path_nodes[], int path_len_dest)
 {
     #if DEBUG
     puts("DEBUG: HEADER CREATION\n");
@@ -215,7 +215,7 @@ void build_sphinx_header(unsigned char* sphinx_header, unsigned char shared_secr
 int sphinx_create_message(unsigned char* sphinx_message, ipv6_addr_t* dest_addr, char* data, size_t data_len)
 {
     /* network path for sphinx message to destination and reply */
-    struct network_node* path_nodes[2*SPHINX_MAX_PATH];
+    network_node* path_nodes[2*SPHINX_MAX_PATH];
 
     /* shared secrets with nodes in path */
     unsigned char shared_secrets[2*SPHINX_MAX_PATH][KEY_SIZE];
