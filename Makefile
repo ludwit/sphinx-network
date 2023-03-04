@@ -13,10 +13,9 @@ USEMODULE += netdev_default
 USEMODULE += auto_init_gnrc_netif
 # Specify the mandatory networking modules
 USEMODULE += gnrc_ipv6
-USEMODULE += gnrc_sock_udp
 USEMODULE += gnrc_udp
-USEMODULE += gnrc_icmpv6_error
-USEMODULE += gnrc_icmpv6_echo
+USEMODULE += sock_udp
+USEMODULE += sock_async_event
 # Shell modules
 USEMODULE +=  shell
 USEMODULE +=  shell_cmds_default
