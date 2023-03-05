@@ -93,7 +93,6 @@ void calculate_shared_secrets(unsigned char* sphinx_message, unsigned char share
     print_hex_memory(public_keys, path_len*KEY_SIZE);
     #endif /* DEBUG */
 
-    return;
 }
 
 void calculate_nodes_padding(unsigned char* nodes_padding, unsigned char shared_secrets[][KEY_SIZE], int path_len)
@@ -115,8 +114,6 @@ void calculate_nodes_padding(unsigned char* nodes_padding, unsigned char shared_
 
     /* cutt off last node padding to move nodes padding in place for encapsulation of routing and mac */
     memmove(&nodes_padding[MAX_NODES_PADDING - ((path_len - 1) * NODE_ROUT_SIZE)], &nodes_padding[MAX_NODES_PADDING - ((path_len) * NODE_ROUT_SIZE)], (path_len - 1) * NODE_ROUT_SIZE);
-    
-    return;
 }
 
 void encapsulate_routing_and_mac(unsigned char* routing_and_mac, unsigned char shared_secrets[][KEY_SIZE], network_node* path_nodes[], int path_len, unsigned char* id)
@@ -162,7 +159,6 @@ void encapsulate_routing_and_mac(unsigned char* routing_and_mac, unsigned char s
             memcpy(&routing_and_mac[MAC_SIZE], &path_nodes[i]->addr, ADDR_SIZE);
         }
     }
-    return;
 }
 
 void encrypt_surb_and_payload(unsigned char* surb_and_payload, unsigned char shared_secrets[][KEY_SIZE], int path_len)
@@ -173,8 +169,6 @@ void encrypt_surb_and_payload(unsigned char* surb_and_payload, unsigned char sha
 
         xor_backwards_inplace(surb_and_payload, SURB_SIZE + PAYLOAD_SIZE, prg_stream, PRG_STREAM_SIZE, SURB_SIZE + PAYLOAD_SIZE);
     }
-
-    return;
 }
 
 void build_sphinx_surb(unsigned char *sphinx_surb, unsigned char shared_secrets[][KEY_SIZE], unsigned char *id, network_node* path_nodes[], int path_len_reply)
@@ -191,8 +185,6 @@ void build_sphinx_surb(unsigned char *sphinx_surb, unsigned char shared_secrets[
 
     /* calculates the nested encrypted routing information */
     encapsulate_routing_and_mac(&sphinx_surb[ADDR_SIZE], shared_secrets, path_nodes, path_len_reply, id);
-
-    return;
 }
 
 void build_sphinx_header(unsigned char* sphinx_header, unsigned char shared_secrets[][KEY_SIZE], unsigned char* id, network_node* path_nodes[], int path_len_dest)
@@ -207,8 +199,6 @@ void build_sphinx_header(unsigned char* sphinx_header, unsigned char shared_secr
     calculate_nodes_padding(&sphinx_header[KEY_SIZE + MAC_SIZE], shared_secrets, path_len_dest);
     /* calculates the nested encrypted routing information */
     encapsulate_routing_and_mac(&sphinx_header[KEY_SIZE], shared_secrets, path_nodes, path_len_dest, id);
-
-    return;
 }
 
 
