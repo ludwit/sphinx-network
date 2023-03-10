@@ -22,11 +22,20 @@
 
 int process_reply(unsigned char *message)
 {
-    // delete id from wait list
-    puts("sphinx: reply receivec with id");
-    print_hex_memory(&message[KEY_SIZE], MAC_SIZE);
+    /* look for id in sent messages */
+    for (int i=0; i<sent_msg_count; i++) {
+        /* delet if found */
+        if (memcmp(&message[MAC_SIZE + ADDR_SIZE], sent_msg_table[i].id, ID_SIZE) == 0) {
+            memcpy(&sent_msg_table[i], &sent_msg_table[i+1], (SENT_MSG_TABLE_SIZE - sent_msg_count) * sizeof(event_send));
+            sent_msg_count--;
+            print_id(&message[KEY_SIZE]);
+            puts("message acknoleged");
+            return 1;
+        }
+    }
 
-    return 1;
+    puts("error: id of acknolegement not found");
+    return -1;
 }
 
 int receive_message(unsigned char *message, unsigned char *public_key, unsigned char *shared_secret)
@@ -36,7 +45,7 @@ int receive_message(unsigned char *message, unsigned char *public_key, unsigned 
     unsigned char blinding_factor[KEY_SIZE];
 
     /* print message */
-    printf("sphinx: message received\n%s\n", &message[HEADER_SIZE + SURB_SIZE]);
+    printf("sphinx: %s\n", &message[HEADER_SIZE + SURB_SIZE]);
 
     /* parse address of first reply hop */
     memcpy(&first_reply_hop, &message[HEADER_SIZE], ADDR_SIZE);
@@ -138,13 +147,15 @@ int sphinx_process_message(unsigned char *message, network_node* node_self, unsi
     crypto_stream(prg_stream, PRG_STREAM_SIZE, nonce, shared_secret);
     xor_backwards_inplace(message, SPHINX_MESSAGE_SIZE, prg_stream, PRG_STREAM_SIZE, PRG_STREAM_SIZE);
 
+    //puts("decide what to do with message");
+    //print_hex_memory(sphinx_message, SPHINX_MESSAGE_SIZE);
+
     /* check if message is forward, receive or reply */
     if (ipv6_addr_equal(&node_self->addr, (ipv6_addr_t *) &message[MAC_SIZE])) {
 
-        if (crypto_onetimeauth_verify(&message[MAC_SIZE + ADDR_SIZE], &message[HEADER_SIZE + SURB_SIZE], PAYLOAD_SIZE, shared_secret) == 0) {
+        if (message[MAC_SIZE + ADDR_SIZE] == 0x00 && memcmp(&message[MAC_SIZE + ADDR_SIZE], &message[MAC_SIZE + ADDR_SIZE + 1], ID_SIZE - 1) == 0) {
             return receive_message(message, public_key, shared_secret);
         } else {
-            // check if id was found
             return process_reply(message);
         }
 

@@ -20,9 +20,12 @@
 
 #include "shpinx.h"
 
+/* address of message destination */
+ipv6_addr_t dest_addr;
+
 /* parse user input */
 int sphinx_cmd(int argc, char **argv)
-{
+{ 
     if (argc == 2) {
         if (strcmp(argv[1], "start") == 0) {
             if (sphinx_pid) {
@@ -41,7 +44,7 @@ int sphinx_cmd(int argc, char **argv)
                 return 1;
             }
             
-            event_t sphinx_stop = { .handler = handle_stop};
+            event_t sphinx_stop = { .handler = handle_stop };
             event_post(&sphinx_queue, &sphinx_stop);
 
             if (thread_kill_zombie(sphinx_pid) != 1) {
@@ -62,8 +65,12 @@ int sphinx_cmd(int argc, char **argv)
             return 1;
         }
 
+        if (sent_msg_count >=  SENT_MSG_TABLE_SIZE) {
+            puts("error: can't send message, waiting for too many replies");
+            return 1;
+        }
+
         /* parse destinaiton addr */
-        ipv6_addr_t dest_addr;
         if (ipv6_addr_from_buf(&dest_addr, argv[2], strlen(argv[2])) == NULL) {
             puts("error: ipv6 address malformed");
             return 1;
@@ -75,9 +82,16 @@ int sphinx_cmd(int argc, char **argv)
             return 1;
         }
 
-        /* create event for sphinx and put it in event queue */
-        event_send sphinx_send = { .handler = handle_send, .dest_addr = &dest_addr, .data = argv[3], .data_len = strlen(argv[3])};
-        event_post(&sphinx_queue, (event_t *) &sphinx_send);
+        /* create event for sendig a message and save it to local array */
+        sent_msg_table[sent_msg_count] = (event_send) {.handler = handle_send,
+                                                       .transmit_count = 0,
+                                                       .data = argv[3],
+                                                       .data_len = strlen(argv[3])};
+        memcpy(&sent_msg_table[sent_msg_count].dest_addr, &dest_addr, ADDR_SIZE);
+        
+        sent_msg_count ++;
+        event_post(&sphinx_queue, (event_t*) &sent_msg_table[sent_msg_count-1]);
+
 
         return 0;
     }

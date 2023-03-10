@@ -32,8 +32,17 @@ void print_hex_memory(void *mem, int mem_size)
         printf("0x%02x, ", p[i]);
     }
     printf("0x%02x\n\n", p[i]);
+}
 
-    return;
+void print_id(void *id)
+{
+    int i;
+    unsigned char *p = (unsigned char *)id;
+
+    for (i=0; i<ID_SIZE; i++) {
+        printf("%02x", p[i]);
+    }
+    printf(": ");
 }
 
 int get_local_ipv6_addr(ipv6_addr_t *result)
@@ -89,8 +98,6 @@ void hash_blinding_factor(unsigned char *dest, unsigned char *public_key, unsign
     memcpy(&hash_input[KEY_SIZE], sharde_secret, KEY_SIZE);
     crypto_hash(hash, hash_input, sizeof(hash_input));
     memcpy(dest, &hash, KEY_SIZE);
-
-    return;
 }
 
 void hash_shared_secret(unsigned char *dest, unsigned char *raw_sharde_secret)
@@ -98,21 +105,6 @@ void hash_shared_secret(unsigned char *dest, unsigned char *raw_sharde_secret)
     unsigned char hash[crypto_hash_BYTES];
     crypto_hash(hash, raw_sharde_secret, KEY_SIZE);
     memcpy(dest, &hash, KEY_SIZE);
-
-    return;
-}
-
-void xor_backwards(unsigned char *dest, size_t dest_size, unsigned char *a, size_t a_size, unsigned char *b, size_t b_size, unsigned int num_bytes)
-{
-    // bald weg
-    
-    unsigned int i;
-
-    for (i=1; i<=num_bytes; i++) {
-        dest[dest_size - i] = a[a_size -  i] ^ b[b_size - i];
-    }
-
-    return;
 }
 
 void xor_backwards_inplace(unsigned char *dest, size_t dest_size, unsigned char *arg, size_t arg_size, int num_bytes)
@@ -120,6 +112,4 @@ void xor_backwards_inplace(unsigned char *dest, size_t dest_size, unsigned char 
     for (int i=1; i<=num_bytes; i++) {
         dest[dest_size - i] = dest[dest_size -  i] ^ arg[arg_size - i];
     }
-
-    return;
 }

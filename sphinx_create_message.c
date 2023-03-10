@@ -1,6 +1,11 @@
 #include "shpinx.h"
 
 // überall unsigned weg machen
+// ints zu uint8_t machen
+// alle pointer zu type *var machen
+// id size gibts
+// 16 byte cutoff beim processen
+// brauch ich ienen mutex fur sent ms count?
 
 int bulid_mix_path(network_node* path_nodes[], int path_len, ipv6_addr_t *start_addr, ipv6_addr_t *dest_addr)
 {
@@ -28,7 +33,7 @@ int bulid_mix_path(network_node* path_nodes[], int path_len, ipv6_addr_t *start_
 
     /* add final destination node */
     if ((path_nodes[i] = get_node(dest_addr)) == NULL) {
-        puts("destination address not found in pki");
+        puts("error: destination address not found in pki");
         return -1;
     }
 
@@ -123,7 +128,7 @@ void encapsulate_routing_and_mac(unsigned char* routing_and_mac, unsigned char s
 
     /* prepare root routing information for iteration */
     memcpy(&routing_and_mac[MAC_SIZE], &path_nodes[path_len-1]->addr, ADDR_SIZE);
-    memcpy(&routing_and_mac[MAC_SIZE + ADDR_SIZE], id, MAC_SIZE);
+    memcpy(&routing_and_mac[MAC_SIZE + ADDR_SIZE], id, ID_SIZE);
     random_bytes(&routing_and_mac[MAC_SIZE + ADDR_SIZE + MAC_SIZE], header_padding_size);
 
     for (int i=path_len-1; i>=0; i--) {
@@ -187,22 +192,24 @@ void build_sphinx_surb(unsigned char *sphinx_surb, unsigned char shared_secrets[
     encapsulate_routing_and_mac(&sphinx_surb[ADDR_SIZE], shared_secrets, path_nodes, path_len_reply, id);
 }
 
-void build_sphinx_header(unsigned char* sphinx_header, unsigned char shared_secrets[][KEY_SIZE], unsigned char* id, network_node* path_nodes[], int path_len_dest)
+void build_sphinx_header(unsigned char* sphinx_header, unsigned char shared_secrets[][KEY_SIZE], network_node* path_nodes[], int path_len_dest)
 {
     #if DEBUG
     puts("DEBUG: HEADER CREATION\n");
     #endif /* DEBUG */
 
-    /* calculates mac of plain text payload for authentication at destination and as message id */
-    crypto_onetimeauth(id, &sphinx_header[HEADER_SIZE + SURB_SIZE], PAYLOAD_SIZE, shared_secrets[path_len_dest - 1]);
+    /* use 0s as ID for dest */
+    unsigned char id_dest[ID_SIZE];
+    memset(&id_dest, 0x00, ID_SIZE);
+
     /* precalculates the accumulated padding added at each hop */
     calculate_nodes_padding(&sphinx_header[KEY_SIZE + MAC_SIZE], shared_secrets, path_len_dest);
     /* calculates the nested encrypted routing information */
-    encapsulate_routing_and_mac(&sphinx_header[KEY_SIZE], shared_secrets, path_nodes, path_len_dest, id);
+    encapsulate_routing_and_mac(&sphinx_header[KEY_SIZE], shared_secrets, path_nodes, path_len_dest, &id_dest[0]);
 }
 
 
-int sphinx_create_message(unsigned char* sphinx_message, ipv6_addr_t* dest_addr, char* data, size_t data_len)
+int sphinx_create_message(unsigned char* sphinx_message, unsigned char* id, ipv6_addr_t* dest_addr, char* data, size_t data_len)
 {
     /* network path for sphinx message to destination and reply */
     network_node* path_nodes[2*SPHINX_MAX_PATH];
@@ -210,14 +217,7 @@ int sphinx_create_message(unsigned char* sphinx_message, ipv6_addr_t* dest_addr,
     /* shared secrets with nodes in path */
     unsigned char shared_secrets[2*SPHINX_MAX_PATH][KEY_SIZE];
 
-    /* mac of payload as message id */
-    unsigned char id[MAC_SIZE];
     // was ist mit der integrity of the surb?
-
-    // irgendwann ganz global machen
-    ipv6_addr_t local_addr;
-    /* local ipv6 addr */  // kann wenn die event sache ist wegrationalisiert werden
-    get_local_ipv6_addr(&local_addr);
 
     /* choose random number for path length to dest */
     int path_len_dest = random_uint32_range(3, SPHINX_MAX_PATH+1);
@@ -249,7 +249,7 @@ int sphinx_create_message(unsigned char* sphinx_message, ipv6_addr_t* dest_addr,
     memcpy(&sphinx_message[HEADER_SIZE + SURB_SIZE], data, data_len);
     memset(&sphinx_message[HEADER_SIZE + SURB_SIZE + data_len], 0, PAYLOAD_SIZE - data_len);
 
-    build_sphinx_header(sphinx_message, shared_secrets, id, path_nodes, path_len_dest);
+    build_sphinx_header(sphinx_message, shared_secrets, path_nodes, path_len_dest);
 
     build_sphinx_surb(&sphinx_message[HEADER_SIZE], &shared_secrets[path_len_dest], id, &path_nodes[path_len_dest], path_len_reply);
 
@@ -262,10 +262,6 @@ int sphinx_create_message(unsigned char* sphinx_message, ipv6_addr_t* dest_addr,
 
     /* change destination to first hop */
     memcpy(dest_addr, &path_nodes[0]->addr, ADDR_SIZE);
-
-    //save_id(id);
-    puts("sphinx: message sent with id");
-    print_hex_memory(id, MAC_SIZE);
 
     return 1;
 }

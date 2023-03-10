@@ -44,6 +44,10 @@ ipv6_addr_t local_addr;
 /* socket to receive sphinx messages */
 sock_udp_t sock;
 
+/* stores sent messages */
+event_send sent_msg_table[SENT_MSG_TABLE_SIZE];
+uint8_t sent_msg_count = 0;
+
 void handle_stop(event_t *event)
 {
     (void) event;
@@ -51,17 +55,38 @@ void handle_stop(event_t *event)
     thread_zombify();
 }
 
-void handle_send(event_t *event) 
+void handle_send(event_t *event)
 {
     event_send *sphinx_send = (event_send *) event;
 
+    /* create id for first transmitt */
+    if (sphinx_send->transmit_count == 0) {
+        random_bytes(sphinx_send->id, ID_SIZE);
+    }
+
+    /* set destination addres to recipient */
+    memcpy(&dest_addr, &sphinx_send->dest_addr, ADDR_SIZE);
+
     /* create sphinx message */
-    if (sphinx_create_message(sphinx_message, sphinx_send->dest_addr, sphinx_send->data, sphinx_send->data_len) < 0) {
+    if ((sphinx_create_message(sphinx_message, sphinx_send->id, &dest_addr, sphinx_send->data, sphinx_send->data_len)) < 0) {
         puts("error: could not create sphinx message");
+        return;
     }
 
     /* send sphinx message */
-    udp_send(sphinx_send->dest_addr, sphinx_message, SPHINX_MESSAGE_SIZE);
+    udp_send(&dest_addr, sphinx_message, SPHINX_MESSAGE_SIZE);
+
+    /* adjust the event properties */
+    sphinx_send->transmit_count++;
+    sphinx_send->timestamp = xtimer_now_usec();
+
+    /* verbose */
+    print_id(&sphinx_send->id);
+    if (sphinx_send->transmit_count == 1) {
+        puts("message sent");
+    } else {
+        puts("message retransmitted");
+    }
 }
 
 void handle_socket(sock_udp_t *sock, sock_async_flags_t type, void *node_self)
@@ -73,7 +98,7 @@ void handle_socket(sock_udp_t *sock, sock_async_flags_t type, void *node_self)
         res = sock_udp_recv(sock, sphinx_message, SPHINX_MESSAGE_SIZE, 0, NULL);
 
         if (res < 0) {
-            printf("sphinx: error %d receiving data\n", res);
+            printf("sphinx: error receiving data, code %d\n", res);
             return;
         }
         
@@ -88,10 +113,16 @@ void handle_socket(sock_udp_t *sock, sock_async_flags_t type, void *node_self)
     }
 }
 
-void *sphinx(void *arg)
+void* sphinx(void* arg)
 {
     (void) arg;
-    network_node *node_self;
+
+    /* used to store time variable */
+    uint32_t now;
+
+    event_t* event;
+
+    network_node* node_self;
 
     sock_udp_ep_t local = SOCK_IPV6_EP_ANY;
     local.port = SPHINX_PORT;
@@ -115,8 +146,43 @@ void *sphinx(void *arg)
     }
 
     event_queue_init(&sphinx_queue);
+
+    /* makes socket create events for asynchronous access */
     sock_udp_event_init(&sock, &sphinx_queue, handle_socket, node_self);
-    event_loop(&sphinx_queue);
+
+    while(1) {
+
+        /* wait for event with timeout */
+        if ((event = event_wait_timeout(&sphinx_queue, EVENT_TIMEOUT_US))) {
+            event->handler(event);
+        }
+
+        
+        now = xtimer_now_usec();
+
+        /* check status of sent messages */
+        for (int i=0; i<sent_msg_count; i++) {
+
+            /* check if timeout was exceeded */
+            if ((now - sent_msg_table[i].timestamp) < MSG_TIMEOUT_US) {
+                continue;
+            }
+
+            /* check if maximum transmis of message are reached */
+            if (sent_msg_table[i].transmit_count >= MAX_TRANSMITS) {
+                print_id(&sent_msg_table[i].id);
+                puts("message discarded");
+
+                /* delete message */
+                memmove(&sent_msg_table[i], &sent_msg_table[i+1], (SENT_MSG_TABLE_SIZE - i) * sizeof(event_send));
+                sent_msg_count--;
+                break;
+            }
+
+            /* retransmit message */
+            handle_send((event_t*) &sent_msg_table[i]);
+        }
+    }
 
     return NULL;
 }
