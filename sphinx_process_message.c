@@ -44,21 +44,27 @@ int receive_message(unsigned char *message, unsigned char *public_key, unsigned 
 
     unsigned char blinding_factor[KEY_SIZE];
 
+    /* verify integrity of surb and payload */
+    if (crypto_onetimeauth_verify(&message[HEADER_SIZE], &message[HEADER_SIZE + MAC_SIZE], SURB_SIZE + PAYLOAD_SIZE, shared_secret) < 0) {
+        puts("error: surb and payload authentication failed");
+        return -1;
+    }
+
     /* print message */
-    printf("sphinx: %s\n", &message[HEADER_SIZE + SURB_SIZE]);
+    printf("sphinx: %s\n", &message[HEADER_SIZE + MAC_SIZE + SURB_SIZE]);
 
     /* parse address of first reply hop */
-    memcpy(&first_reply_hop, &message[HEADER_SIZE], ADDR_SIZE);
+    memcpy(&first_reply_hop, &message[HEADER_SIZE + MAC_SIZE], ADDR_SIZE);
 
     /* calculate public key for next hop */
     hash_blinding_factor(blinding_factor, public_key, shared_secret);
     crypto_scalarmult(message, blinding_factor, public_key);
 
     /* move surb to header position */
-    memmove(&message[KEY_SIZE], &message[HEADER_SIZE + ADDR_SIZE], MAC_SIZE + ENC_ROUTING_SIZE);
+    memmove(&message[KEY_SIZE], &message[HEADER_SIZE + MAC_SIZE + ADDR_SIZE], MAC_SIZE + ENC_ROUTING_SIZE);
 
     /* fill rest with random bytes */
-    random_bytes(&message[HEADER_SIZE], SURB_SIZE + PAYLOAD_SIZE);
+    random_bytes(&message[HEADER_SIZE], MAC_SIZE + SURB_SIZE + PAYLOAD_SIZE);
 
     if (udp_send(&first_reply_hop, message, SPHINX_MESSAGE_SIZE) < 0) {
         return -1;
@@ -125,7 +131,7 @@ int sphinx_process_message(unsigned char *message, network_node* node_self, unsi
     /* check if tag table is full */
     if (*tag_count == 128) {
         *tag_count = 0;
-        puts("sphinx: rotated public key");
+        puts("sphinx: rotated public key"); //theory
     }
 
     /* save message tag */
@@ -146,9 +152,6 @@ int sphinx_process_message(unsigned char *message, network_node* node_self, unsi
     /* decrypt message */
     crypto_stream(prg_stream, PRG_STREAM_SIZE, nonce, shared_secret);
     xor_backwards_inplace(message, SPHINX_MESSAGE_SIZE, prg_stream, PRG_STREAM_SIZE, PRG_STREAM_SIZE);
-
-    //puts("decide what to do with message");
-    //print_hex_memory(sphinx_message, SPHINX_MESSAGE_SIZE);
 
     /* check if message is forward, receive or reply */
     if (ipv6_addr_equal(&node_self->addr, (ipv6_addr_t *) &message[MAC_SIZE])) {

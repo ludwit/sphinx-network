@@ -172,7 +172,7 @@ void encrypt_surb_and_payload(unsigned char* surb_and_payload, unsigned char sha
 
         crypto_stream(prg_stream, PRG_STREAM_SIZE, nonce, shared_secrets[i]);
 
-        xor_backwards_inplace(surb_and_payload, SURB_SIZE + PAYLOAD_SIZE, prg_stream, PRG_STREAM_SIZE, SURB_SIZE + PAYLOAD_SIZE);
+        xor_backwards_inplace(surb_and_payload, MAC_SIZE + SURB_SIZE + PAYLOAD_SIZE, prg_stream, PRG_STREAM_SIZE, MAC_SIZE + SURB_SIZE + PAYLOAD_SIZE);
     }
 }
 
@@ -251,8 +251,12 @@ int sphinx_create_message(unsigned char* sphinx_message, unsigned char* id, ipv6
 
     build_sphinx_header(sphinx_message, shared_secrets, path_nodes, path_len_dest);
 
-    build_sphinx_surb(&sphinx_message[HEADER_SIZE], &shared_secrets[path_len_dest], id, &path_nodes[path_len_dest], path_len_reply);
+    build_sphinx_surb(&sphinx_message[HEADER_SIZE + MAC_SIZE], &shared_secrets[path_len_dest], id, &path_nodes[path_len_dest], path_len_reply);
 
+    /* calculate mac of surb and payload for integrity checking at dest */
+    crypto_onetimeauth(&sphinx_message[HEADER_SIZE], &sphinx_message[HEADER_SIZE + MAC_SIZE], SURB_SIZE + PAYLOAD_SIZE, shared_secrets[path_len_dest-1]);
+    
+    /* encrypt surb payload and mac of both multiple times */
     encrypt_surb_and_payload(&sphinx_message[HEADER_SIZE], shared_secrets, path_len_dest);
 
     #if DEBUG
