@@ -1,31 +1,11 @@
- /*
- * Copyright (C) 2023 ludwit
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
- */
-
-/**
- * @ingroup     examples
- * @{
- *
- * @file
- * @brief       implements networking capabilities for sphinx
- *
- * @author      ludwit <ludwit@protonmail.com>
- *
- * @}
- */
-
 #include "shpinx.h"
 
-int process_reply(unsigned char *message)
+int8_t process_reply(unsigned char *message)
 {
     /* look for id in sent messages */
-    for (int i=0; i<sent_msg_count; i++) {
+    for (uint8_t i=0; i<sent_msg_count; i++) {
         /* delet if found */
-        if (memcmp(&message[MAC_SIZE + ADDR_SIZE], sent_msg_table[i].id, ID_SIZE) == 0) {
+        if (memcmp(&message[CUTT_OFF + ADDR_SIZE], sent_msg_table[i].id, ID_SIZE) == 0) {
             memcpy(&sent_msg_table[i], &sent_msg_table[i+1], (SENT_MSG_TABLE_SIZE - sent_msg_count) * sizeof(event_send));
             sent_msg_count--;
             print_id(&message[KEY_SIZE]);
@@ -38,7 +18,7 @@ int process_reply(unsigned char *message)
     return -1;
 }
 
-int receive_message(unsigned char *message, unsigned char *public_key, unsigned char *shared_secret)
+int8_t receive_message(unsigned char *message, unsigned char *public_key, unsigned char *shared_secret)
 {
     ipv6_addr_t first_reply_hop;
 
@@ -60,7 +40,7 @@ int receive_message(unsigned char *message, unsigned char *public_key, unsigned 
     hash_blinding_factor(blinding_factor, public_key, shared_secret);
     crypto_scalarmult(message, blinding_factor, public_key);
 
-    /* move surb to header position */
+    /* move mac and routing of surb to header position */
     memmove(&message[KEY_SIZE], &message[HEADER_SIZE + MAC_SIZE + ADDR_SIZE], MAC_SIZE + ENC_ROUTING_SIZE);
 
     /* fill rest with random bytes */
@@ -73,14 +53,14 @@ int receive_message(unsigned char *message, unsigned char *public_key, unsigned 
     return 1;
 }
 
-int forward_message(unsigned char *message, unsigned char *public_key, unsigned char *shared_secret)
+int8_t forward_message(unsigned char *message, unsigned char *public_key, unsigned char *shared_secret)
 {
     ipv6_addr_t next_hop;
 
     unsigned char blinding_factor[KEY_SIZE];
 
     /* parse next hop address */
-    memcpy(&next_hop, &message[MAC_SIZE], ADDR_SIZE);
+    memcpy(&next_hop, &message[CUTT_OFF], ADDR_SIZE);
 
     /* calculate public key for next hop */
     hash_blinding_factor(blinding_factor, public_key, shared_secret);
@@ -95,7 +75,7 @@ int forward_message(unsigned char *message, unsigned char *public_key, unsigned 
 }
 
 
-int sphinx_process_message(unsigned char *message, network_node* node_self, unsigned char tag_table[][TAG_SIZE], int* tag_count)
+int8_t sphinx_process_message(unsigned char *message, network_node *node_self, unsigned char tag_table[][TAG_SIZE], uint8_t *tag_count)
 {
     /* shared secret */
     unsigned char raw_shared_secret[KEY_SIZE];
@@ -121,7 +101,7 @@ int sphinx_process_message(unsigned char *message, network_node* node_self, unsi
     #endif /* DEBUG */
 
     /* check for duplicate */
-    for (int i=0; i<*tag_count; i++) {
+    for (uint8_t i=0; i<*tag_count; i++) {
         if (memcmp(shared_secret, &tag_table[i], TAG_SIZE) == 0) {
             puts("error: duplicate detected");
             return -1;
@@ -145,8 +125,10 @@ int sphinx_process_message(unsigned char *message, network_node* node_self, unsi
         return -1;
     }
 
-    /* add node padding */
+    /* move the encrypted routing info 32 bytes to the left in the header to make space for the node padding */
     memmove(&message[KEY_SIZE + MAC_SIZE - NODE_PADDING_SIZE], &message[KEY_SIZE + MAC_SIZE], ENC_ROUTING_SIZE);
+
+    /* set the node padding */
     memset(&message[HEADER_SIZE - NODE_PADDING_SIZE], 0, NODE_PADDING_SIZE);
 
     /* decrypt message */
@@ -154,9 +136,9 @@ int sphinx_process_message(unsigned char *message, network_node* node_self, unsi
     xor_backwards_inplace(message, SPHINX_MESSAGE_SIZE, prg_stream, PRG_STREAM_SIZE, PRG_STREAM_SIZE);
 
     /* check if message is forward, receive or reply */
-    if (ipv6_addr_equal(&node_self->addr, (ipv6_addr_t *) &message[MAC_SIZE])) {
+    if (ipv6_addr_equal(&node_self->addr, (ipv6_addr_t *) &message[CUTT_OFF])) {
 
-        if (message[MAC_SIZE + ADDR_SIZE] == 0x00 && memcmp(&message[MAC_SIZE + ADDR_SIZE], &message[MAC_SIZE + ADDR_SIZE + 1], ID_SIZE - 1) == 0) {
+        if (message[CUTT_OFF + ADDR_SIZE] == 0x00 && memcmp(&message[CUTT_OFF + ADDR_SIZE], &message[CUTT_OFF + ADDR_SIZE + 1], ID_SIZE - 1) == 0) {
             return receive_message(message, public_key, shared_secret);
         } else {
             return process_reply(message);

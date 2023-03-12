@@ -1,19 +1,12 @@
 #include "shpinx.h"
 
-// überall unsigned weg machen
-// ints zu uint8_t machen
-// alle pointer zu type *var machen
-// id size gibts
-// 16 byte cutoff beim processen
-// brauch ich ienen mutex fur sent ms count?
-
-int bulid_mix_path(network_node* path_nodes[], int path_len, ipv6_addr_t *start_addr, ipv6_addr_t *dest_addr)
+int8_t bulid_mix_path(network_node *path_nodes[], uint8_t path_len, ipv6_addr_t *start_addr, ipv6_addr_t *dest_addr)
 {
     uint32_t random;
     char chosen[SPHINX_NET_SIZE] = {0};
 
     /* select random mix nodes */
-    int i = 0;
+    uint8_t i = 0;
     while (i < (path_len-1)) {
         random = random_uint32_range(0, SPHINX_NET_SIZE);
 
@@ -26,7 +19,7 @@ int bulid_mix_path(network_node* path_nodes[], int path_len, ipv6_addr_t *start_
             continue;
         }
 
-        path_nodes[i] = (network_node*) &network_pki[random];
+        path_nodes[i] = (network_node *) &network_pki[random];
         chosen[random] = '1';
         i++;
     }
@@ -40,7 +33,7 @@ int bulid_mix_path(network_node* path_nodes[], int path_len, ipv6_addr_t *start_
     return 1;
 }
 
-void calculate_shared_secrets(unsigned char* sphinx_message, unsigned char shared_secrets[][KEY_SIZE], network_node* path_nodes[], int path_len)
+void calculate_shared_secrets(unsigned char *sphinx_message, unsigned char shared_secrets[][KEY_SIZE], network_node *path_nodes[], uint8_t path_len)
 {
     /* secret ecc key of the sender (x in sphinx spec) */
     unsigned char secret_key[KEY_SIZE];
@@ -72,7 +65,7 @@ void calculate_shared_secrets(unsigned char* sphinx_message, unsigned char share
     hash_blinding_factor(blinding_factors[0], public_keys[0], shared_secrets[0]);
 
     /* iteratively calculates all remaining public keys, shared secrets and blinding factors */
-    for (int i=1; i<path_len; i++) {
+    for (uint8_t i=1; i<path_len; i++) {
 
         /* blinds the public key for node i-1 to get public key for node i */
         crypto_scalarmult(public_keys[i], blinding_factors[i-1], public_keys[i-1]);
@@ -81,7 +74,7 @@ void calculate_shared_secrets(unsigned char* sphinx_message, unsigned char share
         crypto_scalarmult(buff_shared_secret, secret_key, path_nodes[i]->public_key);
 
         /* iteratively applies all past blinding to shared secret with node i */ // das hier für den SURB irgendwie auch machen :))))))))))))))))))
-        for (int j=0; j<i; j++) {
+        for (uint8_t j=0; j<i; j++) {
             crypto_scalarmult(shared_secrets[i], blinding_factors[j], buff_shared_secret);
             memcpy(buff_shared_secret, &shared_secrets[i], KEY_SIZE);
         }
@@ -100,11 +93,11 @@ void calculate_shared_secrets(unsigned char* sphinx_message, unsigned char share
 
 }
 
-void calculate_nodes_padding(unsigned char* nodes_padding, unsigned char shared_secrets[][KEY_SIZE], int path_len)
+void calculate_nodes_padding(unsigned char *nodes_padding, unsigned char shared_secrets[][KEY_SIZE], uint8_t path_len)
 {
-    unsigned int padding_size = 0;
+    uint8_t padding_size = 0;
 
-    for (int i=0; i<path_len; i++) {
+    for (uint8_t i=0; i<path_len; i++) {
         /* move padding for NODE_ROUTE_SIZE = NODE_PADDING_SIZE bytes to the left */
         memmove(&nodes_padding[MAX_NODES_PADDING - padding_size - NODE_ROUT_SIZE], &nodes_padding[MAX_NODES_PADDING - padding_size], padding_size);
         /* set the rightmost NODE_ROUTE_SIZE bytes to zero (this is the padding) */
@@ -121,17 +114,17 @@ void calculate_nodes_padding(unsigned char* nodes_padding, unsigned char shared_
     memmove(&nodes_padding[MAX_NODES_PADDING - ((path_len - 1) * NODE_ROUT_SIZE)], &nodes_padding[MAX_NODES_PADDING - ((path_len) * NODE_ROUT_SIZE)], (path_len - 1) * NODE_ROUT_SIZE);
 }
 
-void encapsulate_routing_and_mac(unsigned char* routing_and_mac, unsigned char shared_secrets[][KEY_SIZE], network_node* path_nodes[], int path_len, unsigned char* id)
+void encapsulate_routing_and_mac(unsigned char *routing_and_mac, unsigned char shared_secrets[][KEY_SIZE], network_node *path_nodes[], uint8_t path_len, unsigned char *id)
 {
     /* padding to keep header size invariant regardless of actual path length */
-    int header_padding_size = (SPHINX_MAX_PATH - path_len) * NODE_ROUT_SIZE;
+    uint8_t header_padding_size = (SPHINX_MAX_PATH - path_len) * NODE_ROUT_SIZE;
 
     /* prepare root routing information for iteration */
     memcpy(&routing_and_mac[MAC_SIZE], &path_nodes[path_len-1]->addr, ADDR_SIZE);
     memcpy(&routing_and_mac[MAC_SIZE + ADDR_SIZE], id, ID_SIZE);
-    random_bytes(&routing_and_mac[MAC_SIZE + ADDR_SIZE + MAC_SIZE], header_padding_size);
+    random_bytes(&routing_and_mac[MAC_SIZE + ADDR_SIZE + ID_SIZE], header_padding_size);
 
-    for (int i=path_len-1; i>=0; i--) {
+    for (int8_t i=path_len-1; i>=0; i--) {
 
         #if DEBUG
         printf("DEBUG: decrypted Routing Inforation at Node %d\n", i);
@@ -166,9 +159,9 @@ void encapsulate_routing_and_mac(unsigned char* routing_and_mac, unsigned char s
     }
 }
 
-void encrypt_surb_and_payload(unsigned char* surb_and_payload, unsigned char shared_secrets[][KEY_SIZE], int path_len)
+void encrypt_surb_and_payload(unsigned char *surb_and_payload, unsigned char shared_secrets[][KEY_SIZE], uint8_t path_len)
 {
-    for (int i=path_len-1; i>=0; i--) {
+    for (int8_t i=path_len-1; i>=0; i--) {
 
         crypto_stream(prg_stream, PRG_STREAM_SIZE, nonce, shared_secrets[i]);
 
@@ -176,7 +169,7 @@ void encrypt_surb_and_payload(unsigned char* surb_and_payload, unsigned char sha
     }
 }
 
-void build_sphinx_surb(unsigned char *sphinx_surb, unsigned char shared_secrets[][KEY_SIZE], unsigned char *id, network_node* path_nodes[], int path_len_reply)
+void build_sphinx_surb(unsigned char *sphinx_surb, unsigned char shared_secrets[][KEY_SIZE], unsigned char *id, network_node *path_nodes[], uint8_t path_len_reply)
 {
     #if DEBUG
     puts("DEBUG: SURB CREATION\n");
@@ -192,7 +185,7 @@ void build_sphinx_surb(unsigned char *sphinx_surb, unsigned char shared_secrets[
     encapsulate_routing_and_mac(&sphinx_surb[ADDR_SIZE], shared_secrets, path_nodes, path_len_reply, id);
 }
 
-void build_sphinx_header(unsigned char* sphinx_header, unsigned char shared_secrets[][KEY_SIZE], network_node* path_nodes[], int path_len_dest)
+void build_sphinx_header(unsigned char *sphinx_header, unsigned char shared_secrets[][KEY_SIZE], network_node *path_nodes[], uint8_t path_len_dest)
 {
     #if DEBUG
     puts("DEBUG: HEADER CREATION\n");
@@ -209,7 +202,7 @@ void build_sphinx_header(unsigned char* sphinx_header, unsigned char shared_secr
 }
 
 
-int sphinx_create_message(unsigned char* sphinx_message, unsigned char* id, ipv6_addr_t* dest_addr, char* data, size_t data_len)
+int8_t sphinx_create_message(unsigned char *sphinx_message, unsigned char *id, ipv6_addr_t *dest_addr, char *data, size_t data_len)
 {
     /* network path for sphinx message to destination and reply */
     network_node* path_nodes[2*SPHINX_MAX_PATH];
@@ -220,10 +213,10 @@ int sphinx_create_message(unsigned char* sphinx_message, unsigned char* id, ipv6
     // was ist mit der integrity of the surb?
 
     /* choose random number for path length to dest */
-    int path_len_dest = random_uint32_range(3, SPHINX_MAX_PATH+1);
+    uint8_t path_len_dest = random_uint32_range(3, SPHINX_MAX_PATH+1);
 
     /* choose random number for path length of reply */
-    int path_len_reply = random_uint32_range(3, SPHINX_MAX_PATH+1);
+    uint8_t path_len_reply = random_uint32_range(3, SPHINX_MAX_PATH+1);
 
     #if DEBUG
     printf("DEBUG: path_len_dest=%d\n\n", path_len_dest);
@@ -246,8 +239,8 @@ int sphinx_create_message(unsigned char* sphinx_message, unsigned char* id, ipv6
     #endif /* DEBUG */
 
     /* put payload in place */
-    memcpy(&sphinx_message[HEADER_SIZE + SURB_SIZE], data, data_len);
-    memset(&sphinx_message[HEADER_SIZE + SURB_SIZE + data_len], 0, PAYLOAD_SIZE - data_len);
+    memcpy(&sphinx_message[HEADER_SIZE + MAC_SIZE + SURB_SIZE], data, data_len);
+    memset(&sphinx_message[HEADER_SIZE + MAC_SIZE + SURB_SIZE + data_len], 0, PAYLOAD_SIZE - data_len);
 
     build_sphinx_header(sphinx_message, shared_secrets, path_nodes, path_len_dest);
 

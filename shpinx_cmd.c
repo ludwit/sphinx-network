@@ -1,27 +1,10 @@
-/*
- * Copyright (C) 2023 ludwit
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
- */
-
-/**
- * @ingroup     examples
- * @{
- *
- * @file
- * @brief       implements networking capabilities for sphinx
- *
- * @author      ludwit <ludwit@protonmail.com>
- *
- * @}
- */
-
 #include "shpinx.h"
 
 /* address of message destination */
 ipv6_addr_t dest_addr;
+
+/* event for sending a message */
+event_send sphinx_send;
 
 /* parse user input */
 int sphinx_cmd(int argc, char **argv)
@@ -65,11 +48,6 @@ int sphinx_cmd(int argc, char **argv)
             return 1;
         }
 
-        if (sent_msg_count >=  SENT_MSG_TABLE_SIZE) {
-            puts("error: can't send message, waiting for too many replies");
-            return 1;
-        }
-
         /* parse destinaiton addr */
         if (ipv6_addr_from_buf(&dest_addr, argv[2], strlen(argv[2])) == NULL) {
             puts("error: ipv6 address malformed");
@@ -82,15 +60,10 @@ int sphinx_cmd(int argc, char **argv)
             return 1;
         }
 
-        /* create event for sendig a message and save it to local array */
-        sent_msg_table[sent_msg_count] = (event_send) {.handler = handle_send,
-                                                       .transmit_count = 0,
-                                                       .data = argv[3],
-                                                       .data_len = strlen(argv[3])};
-        memcpy(&sent_msg_table[sent_msg_count].dest_addr, &dest_addr, ADDR_SIZE);
-        
-        sent_msg_count ++;
-        event_post(&sphinx_queue, (event_t*) &sent_msg_table[sent_msg_count-1]);
+        /* set event for sendig a message */
+        sphinx_send = (event_send) {.handler = handle_send, .transmit_count = 0, .dest_addr = dest_addr, .data = argv[3], .data_len = strlen(argv[3])};
+
+        event_post(&sphinx_queue, (event_t *) &sphinx_send);
 
 
         return 0;

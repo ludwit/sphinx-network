@@ -1,23 +1,3 @@
-/*
- * Copyright (C) 2023 ludwit
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
- */
-
-/**
- * @ingroup     examples
- * @{
- *
- * @file
- * @brief       implements networking capabilities for sphinx
- *
- * @author      ludwit <ludwit@protonmail.com>
- *
- * @}
- */
-
 #include "shpinx.h"
 
 /* idicator if sphinx thread is running */
@@ -33,7 +13,7 @@ unsigned char sphinx_message[SPHINX_MESSAGE_SIZE];
 
 /* array to store seen message tags to prevent replay attacks */
 unsigned char tag_table[TAG_TABLE_LEN][TAG_SIZE];
-int tag_count = 0;
+uint8_t tag_count = 0;
 
 /* event queue for sphinx thread */
 event_queue_t sphinx_queue;
@@ -48,6 +28,9 @@ sock_udp_t sock;
 event_send sent_msg_table[SENT_MSG_TABLE_SIZE];
 uint8_t sent_msg_count = 0;
 
+/* mutex for variables storing state of sent messages */
+mutex_t sent_msg_mutex = MUTEX_INIT;
+
 void handle_stop(event_t *event)
 {
     (void) event;
@@ -59,8 +42,14 @@ void handle_send(event_t *event)
 {
     event_send *sphinx_send = (event_send *) event;
 
-    /* create id for first transmitt */
+    /* check if this is the first transmitt */
     if (sphinx_send->transmit_count == 0) {
+        /* check if message can be sent */
+        if (sent_msg_count >=  SENT_MSG_TABLE_SIZE) {
+            puts("error: can't send message, waiting for too many replies");
+            return;
+        }
+        /* else set random id */
         random_bytes(sphinx_send->id, ID_SIZE);
     }
 
@@ -81,9 +70,12 @@ void handle_send(event_t *event)
     sphinx_send->timestamp = xtimer_now_usec();
 
     /* verbose */
-    print_id(&sphinx_send->id);
+    print_id(sphinx_send->id);
     if (sphinx_send->transmit_count == 1) {
         puts("message sent");
+        /* add message to sent message table */
+        memcpy(&sent_msg_table[sent_msg_count], sphinx_send, sizeof(event_send));
+        sent_msg_count++;
     } else {
         puts("message retransmitted");
     }
@@ -113,16 +105,16 @@ void handle_socket(sock_udp_t *sock, sock_async_flags_t type, void *node_self)
     }
 }
 
-void* sphinx(void* arg)
+void* sphinx(void *arg)
 {
     (void) arg;
 
     /* used to store time variable */
     uint32_t now;
 
-    event_t* event;
+    event_t *event;
 
-    network_node* node_self;
+    network_node *node_self;
 
     sock_udp_ep_t local = SOCK_IPV6_EP_ANY;
     local.port = SPHINX_PORT;
@@ -161,7 +153,7 @@ void* sphinx(void* arg)
         now = xtimer_now_usec();
 
         /* check status of sent messages */
-        for (int i=0; i<sent_msg_count; i++) {
+        for (uint8_t i=0; i<sent_msg_count; i++) {
 
             /* check if timeout was exceeded */
             if ((now - sent_msg_table[i].timestamp) < MSG_TIMEOUT_US) {
@@ -170,7 +162,7 @@ void* sphinx(void* arg)
 
             /* check if maximum transmis of message are reached */
             if (sent_msg_table[i].transmit_count >= MAX_TRANSMITS) {
-                print_id(&sent_msg_table[i].id);
+                print_id(sent_msg_table[i].id);
                 puts("message discarded");
 
                 /* delete message */
@@ -180,7 +172,7 @@ void* sphinx(void* arg)
             }
 
             /* retransmit message */
-            handle_send((event_t*) &sent_msg_table[i]);
+            handle_send((event_t *) &sent_msg_table[i]);
         }
     }
 
@@ -188,7 +180,7 @@ void* sphinx(void* arg)
 }
 
 /* starts the sphinx server thread */
-int sphinx_start(void)
+int8_t sphinx_start(void)
 {   
     if ((sphinx_pid = thread_create(sphinx_server_stack,
                        sizeof(sphinx_server_stack),

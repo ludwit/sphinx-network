@@ -1,57 +1,32 @@
-/*
- * Copyright (C) 2023 ludwit
- *
- * This file is subject to the terms and conditions of the GNU Lesser
- * General Public License v2.1. See the file LICENSE in the top level
- * directory for more details.
- */
-
-/**
- * @ingroup     examples
- * @{
- *
- * @file
- * @brief       implements networking capabilities for sphinx
- *
- * @author      ludwit <ludwit@protonmail.com>
- *
- * @}
- */
-
 #include "shpinx.h"
 
-void print_hex_memory(void *mem, int mem_size)
+void print_hex_memory(void *mem, uint16_t mem_size)
 {
-    int i;
-    unsigned char *p = (unsigned char *)mem;
+    unsigned char *p = (unsigned char *) mem;
 
-    for (i=0; i<mem_size -1; i++) {
+    for (uint16_t i=0; i<mem_size -1; i++) {
         if (! (i % 16) && i) {
             printf("\n");
         }
         printf("0x%02x, ", p[i]);
     }
-    printf("0x%02x\n\n", p[i]);
+    printf("0x%02x\n\n", p[mem_size-1]);
 }
 
-void print_id(void *id)
+void print_id(unsigned char *id)
 {
-    int i;
-    unsigned char *p = (unsigned char *)id;
-
-    for (i=0; i<ID_SIZE; i++) {
-        printf("%02x", p[i]);
+    for (uint8_t i=0; i<ID_SIZE; i++) {
+        printf("%02x", id[i]);
     }
     printf(": ");
 }
 
-int get_local_ipv6_addr(ipv6_addr_t *result)
+int8_t get_local_ipv6_addr(ipv6_addr_t *result)
 {
     netif_t *netif;
     ipv6_addr_t addrs[1];
 
     netif = netif_iter(NULL);
-    // no error return value defined for netif_iter
 
     if ((netif_get_ipv6(netif, addrs, ARRAY_SIZE(addrs))) < 0) {
         return -1;
@@ -60,10 +35,9 @@ int get_local_ipv6_addr(ipv6_addr_t *result)
     return 1;
 }
 
-network_node* get_node(ipv6_addr_t *node_addr)
+network_node *get_node(ipv6_addr_t *node_addr)
 {   
-    unsigned int i;
-    for (i=0; i < SPHINX_NET_SIZE; i++) {
+    for (uint8_t i=0; i < SPHINX_NET_SIZE; i++) {
         if (ipv6_addr_equal(&network_pki[i].addr, node_addr)) {
             return (network_node*) &network_pki[i];
         }
@@ -73,7 +47,7 @@ network_node* get_node(ipv6_addr_t *node_addr)
     return NULL;
 }
 
-int udp_send(ipv6_addr_t* dest_addr, unsigned char *message, size_t message_size)
+int8_t udp_send(ipv6_addr_t *dest_addr, unsigned char *message, size_t message_size)
 {
     /* set up remote endpoint */
     sock_udp_ep_t remote = { .family = AF_INET6 };
@@ -107,7 +81,7 @@ void hash_shared_secret(unsigned char *dest, unsigned char *raw_sharde_secret)
     memcpy(dest, &hash, KEY_SIZE);
 }
 
-void xor_backwards_inplace(unsigned char *dest, size_t dest_size, unsigned char *arg, size_t arg_size, int num_bytes)
+void xor_backwards_inplace(unsigned char *dest, size_t dest_size, unsigned char *arg, size_t arg_size, uint16_t num_bytes)
 {
     for (int i=1; i<=num_bytes; i++) {
         dest[dest_size - i] = dest[dest_size -  i] ^ arg[arg_size - i];
